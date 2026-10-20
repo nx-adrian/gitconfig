@@ -1573,14 +1573,15 @@ _base_repo() {
     _remote_repo "$r"
 }
 
-# the branch a PR targets: a recorded parent that exists on a remote, else the default branch.
-# remotes are consulted in the same order as the base repo.
-#   $1: branch
+# the branch a PR targets: a recorded parent that the PR's repo has, else the default branch.
+# github rejects a base that exists only in the fork the head is pushed from.
+#   $1: branch   $2: the repo the PR is opened against
 _base_branch() {
     d=$(cmd_d)
     parent=$(git config --get "branch.$1.atparent" 2>/dev/null) || parent=''
     [ -n "$parent" ] || { printf '%s\n' "$d"; return 0; }
-    for r in upstream $(_main_remote) $(git remote); do
+    for r in $(git remote); do
+        [ "$(_remote_repo "$r")" = "$2" ] || continue
         git rev-parse --verify --quiet "refs/remotes/$r/$parent" >/dev/null 2>&1 &&
             { printf '%s\n' "$parent"; return 0; }
     done
@@ -1721,10 +1722,10 @@ _pr() {
         why=" (this branch tracks $them)"
     fi
 
-    [ -n "$base" ]  || base=$(_base_branch "$b")
     # `_die` inside a command substitution only ends the subshell, so its exit
     # status is the whole signal: swallowing it would carry on past a refusal
     [ -n "$repo" ]  || repo=$(_base_repo) || return 1
+    [ -n "$base" ]  || base=$(_base_branch "$b" "$repo")
 
     f=$(mktemp "${TMPDIR:-/tmp}/git-at-pr.XXXXXX") || return 1
     if [ -n "$body" ]; then
