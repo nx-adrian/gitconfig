@@ -686,7 +686,7 @@ _gen_commit_message() {
 
 # commit; generates the message when none is given, adds the ticket trailer
 #   -u | --all: stage tracked | everything first
-#   -y: commit without opening the editor
+#   -y: commit without opening the editor, and stage --all without asking
 #   --verify: run the hooks (they are skipped by default)
 #   --cc [<name> <email>]: add a co-author trailer, valued from at.commit.coauthor
 #   $@: passed through to `git commit`
@@ -716,7 +716,7 @@ cmd_c() {
 
     case $stage in
         u)   cmd_u >/dev/null || return 1 ;;
-        all) cmd_all || return 1 ;;
+        all) if [ -n "$edit" ]; then cmd_all; else cmd_all -y; fi || return 1 ;;
     esac
 
     # a quicksave is temporary: committing on top of one replaces it
@@ -768,9 +768,10 @@ cmd_c() {
 cmd_u() { git add -u && git status; }
 
 # update all (stage everything, with confirmation)
+#   $1: "-y" = skip confirmation
 cmd_all() {
     git status
-    _confirm 'add all? [y/N] ' || return 1
+    [ "${1:-}" = '-y' ] || _confirm 'add all? [y/N] ' || return 1
     git add --all && git status
 }
 
@@ -780,18 +781,19 @@ cmd_all() {
 #   $@: passed through to `git commit`
 # shellcheck disable=SC2120  # callers may pass commit args through
 cmd_um() {
-    regen=''
+    regen=''; stage=''
     while [ $# -gt 0 ]; do
         case ${1:-} in
-            --all)   cmd_all || return 1; shift ;;
-            -u)      cmd_u >/dev/null || return 1; shift ;;
-            --regen) regen=1; shift ;;
-            *)       break ;;
+            # staging is left to cmd_c, so a -y anywhere also answers --all's prompt
+            --all|-u) stage=$1; shift ;;
+            --regen)  regen=1; shift ;;
+            *)        break ;;
         esac
     done
-    # our own flags go first: cmd_c stops reading flags at the first argument
-    [ -n "$regen" ] && { cmd_c "$@" --amend; return $?; }
-    cmd_c "$@" --amend --no-edit
+    # shellcheck disable=SC2086  # $stage is a flag or nothing
+    [ -n "$regen" ] && { cmd_c $stage "$@" --amend; return $?; }
+    # shellcheck disable=SC2086
+    cmd_c $stage "$@" --amend --no-edit
 }
 
 # quicksave: everything in the tree, into a rolling `working` commit
